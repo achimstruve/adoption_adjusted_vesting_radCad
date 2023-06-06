@@ -2,189 +2,202 @@ from .utils import *
 import random
 from uuid import uuid4
 
-# Behaviors
-def digest_and_olden(params, substep, state_history, prev_state):
+# Policy Functions
+def agents_choose_action(params, substep, state_history, prev_state):
     agents = prev_state['agents']
-    # decide for action
+    # decide for next action of each agent
+    agents_action = {}
     for agent in agents.keys():
-        random.choices(action_list, weights=(20,40,40), k=1)
-    delta_food = {agent: -1 for agent in agents.keys()}
-    delta_age = {agent: +1 for agent in agents.keys()}
-    return {'agent_delta_food': delta_food,
-          'agent_delta_age': delta_age}
+        a_type = agents[agent]["type"]
+        a_usd_funds = agents[agent]["usd_funds"]
+        a_tokens = agents[agent]["tokens"]
+        a_tokens_locked = agents[agent]["tokens_locked"]
+        a_action_list = agents[agent]["action_list"]
+        a_action_weights = agents[agent]["action_weights"]
+        # can't buy tokens without funds
+        if a_usd_funds <= 0:
+            a_action_list, a_action_weights = remove_actions('buy', a_action_list, a_action_weights)
+        # can't sell, lock, or incentivise with tokens without tokens held
+        if a_tokens <= 0:
+            a_action_list, a_action_weights = remove_actions('sell', a_action_list, a_action_weights)
+            a_action_list, a_action_weights = remove_actions('lock', a_action_list, a_action_weights)
+            if 'incentivise' in a_action_list:
+                a_action_list, a_action_weights = remove_actions('incentivise', a_action_list, a_action_weights)
+        # can't remove locked tokens without locked tokens
+        if a_tokens_locked <= 0:
+            a_action_list, a_action_weights = remove_actions('remove_locked_tokens', a_action_list, a_action_weights)
+        
+        action = random.choices(a_action_list, weights=a_action_weights, k=1)[0]
+        agents_action[agent] = action
+    return {'agents_action': agents_action}
 
-def move_agents(params, substep, state_history, prev_state):
-    """
-    Move agents.
-    """
-    sites = prev_state['sites']
+def agents_perform_action(params, substep, state_history, prev_state):
+    current_timestep = state_history[-1][-1]['timestep'] + 1
+
     agents = prev_state['agents']
-    busy_locations = [agent['location'] for agent in agents.values()]
-    new_locations = {}
-    for label, properties in agents.items():
-        new_location = get_free_location(properties['location'], sites, busy_locations)
-        if new_location is not False:
-            new_locations[label] = new_location
-            busy_locations.append(new_location)
+    tokens_locked = prev_state['dex_lp_usdc']
+    dex_lp_tokens = prev_state['dex_lp_tokens']
+    dex_lp_usdc = prev_state['dex_lp_usdc']
+    constant_product = dex_lp_tokens * dex_lp_usdc
+    
+    agents_buy = {}
+    agents_sell = {}
+    agents_lock = {}
+    agents_remove = {}
+    agents_incentivise = {}
+    bought_tokens_usd = 0
+    sold_tokens_usd = 0
+    locked_tokens_before_incentivisation = 0
+    locked_tokens = 0
+    removed_tokens = 0
+    incentivised_tokens = 0
+
+    # aggregate key metrics to each individual agent
+    for agent in agents.keys():
+        action = agents[agent]['current_action']
+        if action == 'buy':
+            agents_buy[agent] = params['avg_usd_base_buy'] * (1 + current_timestep / 100)
+        if action == 'sell':
+            agents_sell[agent] = params['avg_usd_sell'] * (1 - current_timestep / 2000)
+            sold_tokens_usd += agents_sell[agent]
+        if action == 'lock':
+            agents_lock[agent] = agents[agent]['tokens'] * (params['avg_token_lock_percentage'] / 100)
+            locked_tokens_before_incentivisation += agents_lock[agent]
+        if action == 'remove_locked_tokens':
+            agents_remove[agent] = agents[agent]['tokens_locked'] * (params['avg_token_remove_percentage'] / 100)
+        if action == 'incentivise':
+            agents_incentivise[agent] = agents[agent]['tokens'] * (params['avg_token_incentivisation_percentage'] / 100)
+            incentivised_tokens += agents_incentivise[agent]
+    
+    # cancel incentivisation if no tokens locked
+    if locked_tokens_before_incentivisation <= 0:
+        incentivised_tokens = 0
+
+    # increase bought and locked tokens and decrease removed tokens, if incentivised
+    for agent in agents.keys():
+        action = agents[agent]['current_action']
+
+        if incentivised_tokens > 0:
+            if action == 'buy':
+                agents_buy[agent] = agents_buy[agent] * (1 + incentivised_tokens / params['total_supply'] * params['avg_incentivisation_buy_factor'])
+                bought_tokens_usd += agents_buy[agent]
+            if action == 'lock':
+                agents_lock[agent] = agents_lock[agent] * (1 + incentivised_tokens / params['total_supply'] * params['avg_incentivisation_lock_factor'])
+                locked_tokens += agents_lock[agent]
+            if action == 'remove_locked_tokens':
+                agents_remove[agent] = agents_remove[agent] * (1 - incentivised_tokens / params['total_supply'] * params['avg_incentivisation_remove_factor'])
+                removed_tokens += agents_remove[agent]
         else:
-            continue
-    return {'update_agent_location': new_locations}
+            if action == 'incentivise':
+                agents_incentivise[agent] = 0
 
-def reproduce_agents(params, substep, state_history, prev_state):
-    """
-    Generates an new agent through an nearby agent pair, subject to rules.
-    Not done.
-    """
-    agents = prev_state['agents']
-    sites = prev_state['sites']
-    food_threshold = params['reproduction_food_threshold']
-    reproduction_food = params['reproduction_food']
-    reproduction_probability = params['reproduction_probability']
-    busy_locations = [agent['location'] for agent in agents.values()]
-    already_reproduced = []
-    new_agents = {}
-    agent_delta_food = {}
-    for agent_type in set(agent['type'] for agent in agents.values()):
-        # Only reproduce agents of the same type
-        specific_agents = {label: agent for label, agent in agents.items()
-                           if agent['type'] == agent_type}
-        for agent_label, agent_properties in specific_agents.items():
-            location = agent_properties['location']
-            if (agent_properties['food'] < food_threshold or agent_label in already_reproduced):
-                continue
-            kind_neighbors = nearby_agents(location, specific_agents)
-            available_partners = [label for label, agent in kind_neighbors.items()
-                                  if agent['food'] >= food_threshold
-                                  and label not in already_reproduced]
-            reproduction_location = get_free_location(location, sites, busy_locations)
-            
-            if reproduction_location is not False and len(available_partners) > 0:
-                reproduction_partner_label = random.choice(available_partners)
-                reproduction_partner = agents[reproduction_partner_label]
-                already_reproduced += [agent_label, reproduction_partner_label]
+    #print(agents_buy, agents_sell, agents_lock, agents_remove, agents_incentivise)
+    # perform buys / sells / token locks / token removals / token incentivisations of all agents in a random order
+    updated_agents = agents.copy()
+    shuffled_agents = shuffle_dict(updated_agents)
+    for agent in shuffled_agents:
+        # agent action
+        action = agents[agent]['current_action']
 
-                agent_delta_food[agent_label] = -1.0 * reproduction_food
-                agent_delta_food[reproduction_partner_label] = -1.0 * reproduction_food
-                new_agent_properties = {'type': agent_type,
-                                        'location': reproduction_location,
-                                        'food': 2.0 * reproduction_food,
-                                        'age': 0}
-                new_agents[uuid4()] = new_agent_properties
-                busy_locations.append(reproduction_location)
-    return {'agent_delta_food': agent_delta_food,'agent_create': new_agents}
+        # token incentivisation
+        if locked_tokens > 0:
+            # calculate share of locked tokens
+            locked_tokens_share = updated_agents[agent]['tokens_locked'] / locked_tokens
+            # receive tokens from incentivisation
+            updated_agents[agent]['tokens'] += incentivised_tokens * locked_tokens_share
 
-def feed_prey(params, substep, state_history, prev_state):
-    """
-    Feeds the hungry prey with all food located on its site.
-    """
-    agents = prev_state['agents']
-    sites = prev_state['sites']
-    preys = {k: v for k, v in agents.items() if v['type'] == 'prey'}
-    hungry_preys = {label: properties for label, properties in preys.items()
-                    if properties['food'] < params['hunger_threshold']}
+        # buy tokens from the DEX
+        if action == 'buy':
+            # check if agent has enough funds to buy tokens worth of agents_buy
+            if agents_buy[agent] > agents[agent]['usd_funds']:
+                agents_buy[agent] = agents[agent]['usd_funds']
+            updated_agents[agent]['usd_funds'] -= agents_buy[agent]
+            updated_agents[agent]['tokens'] += dex_lp_tokens * (1 - (dex_lp_usdc / (dex_lp_usdc + agents_buy[agent])))
+            dex_lp_usdc += agents_buy[agent]
+            dex_lp_tokens = constant_product / dex_lp_usdc
+        
+        if action == 'sell':
+            # check if agent has enough tokens to sell the equivalent amount of agents_sell[agent]
+            if agents_sell[agent] > dex_lp_usdc * (1 - (dex_lp_tokens / (dex_lp_tokens + agents[agent]['tokens']))):
+                agents_sell[agent] = dex_lp_usdc * (1 - (dex_lp_tokens / (dex_lp_tokens + agents[agent]['tokens'])))
+            updated_agents[agent]['usd_funds'] += agents_sell[agent]
+            updated_agents[agent]['tokens'] -= dex_lp_tokens * ((dex_lp_usdc / (dex_lp_usdc - agents_sell[agent])) - 1)
+            dex_lp_usdc -= agents_sell[agent]
+            dex_lp_tokens = constant_product / dex_lp_usdc
+        
+        if action == 'lock':
+            # check if agent has enough tokens to lock
+            if updated_agents[agent]['tokens'] < agents_lock[agent]:
+                agents_lock[agent] = updated_agents[agent]['tokens']
+            updated_agents[agent]['tokens'] -= agents_lock[agent]
+            updated_agents[agent]['tokens_locked'] += agents_lock[agent]
+            tokens_locked += agents_lock[agent]
+        
+        if action == 'remove_locked_tokens':
+            # check if agent has enough tokens locked to remove
+            if updated_agents[agent]['tokens_locked'] < agents_remove[agent]:
+                agents_remove[agent] = updated_agents[agent]['tokens_locked']
+            updated_agents[agent]['tokens'] += agents_remove[agent]
+            updated_agents[agent]['tokens_locked'] -= agents_remove[agent]
+            tokens_locked -= agents_remove[agent]
+        
+        if action == 'incentivise':
+            if agents_incentivise[agent] > updated_agents[agent]['tokens']:
+                agents_incentivise[agent] = updated_agents[agent]['tokens']
+            updated_agents[agent]['tokens'] -= agents_incentivise[agent]
+    
+    token_price = dex_lp_usdc / dex_lp_tokens
 
-    agent_delta_food = {}
-    site_delta_food = {}
-    for label, properties in hungry_preys.items():
-        location = properties['location']
-        available_food = sites[location]
-        agent_delta_food[label] = available_food
-        site_delta_food[location] = -available_food
+    return {'updated_agents': updated_agents,
+            'updated_dex_lp_tokens': dex_lp_tokens,
+            'update_dex_lp_usdc': dex_lp_usdc,
+            'updated_token_price': token_price,
+            'updated_tokens_locked': tokens_locked}
 
-    return {'agent_delta_food': agent_delta_food,
-            'site_delta_food': site_delta_food}
-
-
-
-def hunt_prey(params, substep, state_history, prev_state):
-    """
-    Feeds the hungry predators with an random nearby prey.
-    """
-    agents = prev_state['agents']
-    sites = prev_state['sites']
-    hungry_threshold = params['hunger_threshold']
-    preys = {k: v for k, v in agents.items()
-             if v['type'] == 'prey'}
-    predators = {k: v for k, v in agents.items()
-                 if v['type'] == 'predator'}
-    hungry_predators = {k: v for k, v in predators.items()
-                        if v['food'] < hungry_threshold}
-    agent_delta_food = {}
-    for predator_label, predator_properties in hungry_predators.items():
-        location = predator_properties['location']
-        nearby_preys = nearby_agents(location, preys)
-        if len(nearby_preys) > 0:
-            eaten_prey_label = random.choice(list(nearby_preys.keys()))
-            delta_food = preys.pop(eaten_prey_label)['food']
-            agent_delta_food[predator_label] = delta_food
-            agent_delta_food[eaten_prey_label] = -1 * delta_food
-        else:
-            continue
-
-    return {'agent_delta_food': agent_delta_food}
-
-
-def natural_death(params, substep, state_history, prev_state):
-    """
-    Remove agents which are old or hungry enough.
-    """
-    agents = prev_state['agents']
-    maximum_age = params['agent_lifespan']
-    agents_to_remove = []
-    for agent_label, agent_properties in agents.items():
-        to_remove = agent_properties['age'] > maximum_age
-        to_remove |= (agent_properties['food'] <= 0)
-        if to_remove:
-            agents_to_remove.append(agent_label)
-    return {'remove_agents': agents_to_remove}
-
-
-
-# Mechanisms
-def agent_food_age(params, substep, state_history, prev_state, policy_input):
-    delta_food_by_agent = policy_input['agent_delta_food']
-    delta_age_by_agent = policy_input['agent_delta_age']
+# State Update Function
+def update_agent_actions(params, substep, state_history, prev_state, policy_input):
+    agent_actions = policy_input['agents_action']
     updated_agents = prev_state['agents'].copy()
 
-    for agent, delta_food in delta_food_by_agent.items():
-        updated_agents[agent]['food'] += delta_food
-    for agent, delta_age in delta_age_by_agent.items():
-        updated_agents[agent]['age'] += delta_age
+    for agent in updated_agents.keys():
+        updated_agents[agent]['current_action'] = agent_actions[agent]
+    
+    return('agents', updated_agents)
+
+def update_agent_metrics(params, substep, state_history, prev_state, policy_input):
+    updated_agents = policy_input['updated_agents'].copy()
     return ('agents', updated_agents)
 
-def agent_location(params, substep, state_history, prev_state, policy_input):
-    updated_agents = prev_state['agents'].copy()
-    for label, location in policy_input['update_agent_location'].items():
-        updated_agents[label]['location'] = location
-    return ('agents', updated_agents)
+def update_dex_lp_tokens(params, substep, state_history, prev_state, policy_input):
+    updated_dex_lp_tokens = policy_input['updated_dex_lp_tokens']
+    return ('dex_lp_tokens', updated_dex_lp_tokens)
 
-def agent_create(params, substep, state_history, prev_state, policy_input):
-    updated_agents = prev_state['agents'].copy()
-    for label, food in policy_input['agent_delta_food'].items():
-        updated_agents[label]['food'] += food
-    for label, properties in policy_input['agent_create'].items():
-        updated_agents[label] = properties
-    return ('agents', updated_agents)
+def update_dex_lp_usdc(params, substep, state_history, prev_state, policy_input):
+    update_dex_lp_usdc = policy_input['update_dex_lp_usdc']
+    return ('dex_lp_usdc', update_dex_lp_usdc)
 
+def update_token_price(params, substep, state_history, prev_state, policy_input):
+    updated_token_price = policy_input['updated_token_price']
+    return ('token_price', updated_token_price)
 
-def site_food(params, substep, state_history, prev_state, policy_input):
-    updated_sites = prev_state['sites'].copy()
-    for label, delta_food in policy_input['site_delta_food'].items():
-        updated_sites[label] += delta_food
-    return ('sites', updated_sites)
+def update_fdv_mc(params, substep, state_history, prev_state, policy_input):
+    updated_token_price = policy_input['updated_token_price']
+    updated_fdv_mc = updated_token_price * params['total_supply']
+    return ('fdv_mc', updated_fdv_mc)
 
-def agent_food(params, substep, state_history, prev_state, policy_input):
-    updated_agents = prev_state['agents'].copy()
-    for label, delta_food in policy_input['agent_delta_food'].items():
-        updated_agents[label]['food'] += delta_food
-    return ('agents', updated_agents)
+def update_mc(params, substep, state_history, prev_state, policy_input):
+    updated_token_price = policy_input['updated_token_price']
 
+    """ for i in range(len(state_history)):
+        print(i, state_history[i])
+    print(len(state_history),"\n\n")
+    print("circ_supply prev_state: ", prev_state["circ_supply"])
+    print("circ_supply state_history of previous substep ",state_history[-1][-1]['substep'], ": ", state_history[-1][-1]['circ_supply'] )
+    if len(state_history)> 2:
+        bb """
+    updated_mc = prev_state['circ_supply'] * updated_token_price
+    return ('mc', updated_mc)
 
-def agent_remove(params, substep, state_history, prev_state, policy_input):
-    agents_to_remove = policy_input['remove_agents']
-    surviving_agents = {k: v for k, v in prev_state['agents'].items()
-                        if k not in agents_to_remove}
-    return ('agents', surviving_agents)
-
-
-
+def update_tokens_locked(params, substep, state_history, prev_state, policy_input):
+    updated_tokens_locked = policy_input['updated_tokens_locked']
+    return ('tokens_locked', updated_tokens_locked)

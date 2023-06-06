@@ -21,66 +21,34 @@ state_update_blocks = [
             'vest_tokens': vest_tokens
         },
         'variables': {
-            'circ_supply': update_circ_supply
+            'vesting_rate': update_vesting_rate,
+            'circ_supply': update_circ_supply,
+            'agents': update_agent_tokens_from_vesting
         }
     },
     {
         # agents.py
         'policies': {
-            'increase_agent_age': digest_and_olden
+            'agents_choose_action': agents_choose_action
         },
         'variables': {
-            'agents': agent_food_age
+            'agents': update_agent_actions
 
         }
     },
     {
         # agents.py
         'policies': {
-            'move_agent': move_agents
+            'agents_perform_action': agents_perform_action
         },
         'variables': {
-            'agents': agent_location
-
-        }
-    },
-    {
-        # agents.py
-        'policies': {
-            'reproduce_agents': reproduce_agents
-
-        },
-        'variables': {
-            'agents': agent_create
-
-        }
-    },
-    {
-        # agents.py
-        'policies': {
-            'feed_prey': feed_prey
-        },
-        'variables': {
-            'agents': agent_food,
-            'sites': site_food
-        }
-    },
-    {
-        # agents.py
-        'policies': {
-            'hunt_prey': hunt_prey
-        },
-        'variables': {
-            'agents': agent_food
-        }
-    },
-    {
-        # agents.py
-        'policies': {
-            'natural_death': natural_death
-        },
-        'variables': {
-            'agents': agent_remove
+            'agents': update_agent_metrics,
+            'dex_lp_tokens': update_dex_lp_tokens,
+            'dex_lp_usdc': update_dex_lp_usdc,
+            'token_price': update_token_price,
+            'fdv_mc': update_fdv_mc,
+            'mc': update_mc,
+            'tokens_locked': update_tokens_locked
         }
     }
 ]

@@ -11,8 +11,11 @@ def new_agent(stakeholder: str, usd_funds: int,
     agent = {'type': stakeholder,
              'usd_funds': usd_funds,
              'tokens': tokens,
+             'tokens_vested': 0,
+             'tokens_locked': 0,
              'action_list': action_list,
-             'action_weights': action_weights}
+             'action_weights': action_weights,
+             'current_action': 'hold'}
     return agent
 
 
@@ -21,78 +24,40 @@ def generate_agents(initial_team_usd_funds: int, initial_team_tokens: int,
                     initial_early_investor_usd_funds: int, initial_early_investor_tokens: int,
                     initial_market_investor_usd_funds: int, initial_market_investor_tokens: int) -> Dict[str, dict]:
     initial_agents = {}
-    team_agent = new_agent('team', initial_team_usd_funds, initial_team_tokens, ['buy', 'sell', 'lock', 'hold'], (0,0,0,100))
-    foundation_agent = new_agent('foundation', initial_foundation_usd_funds, initial_foundation_tokens, ['buy', 'sell', 'lock', 'hold', 'incentivise'], (0,0,0,50,50))
-    early_investor_agent = new_agent('early_investor', initial_early_investor_usd_funds, initial_early_investor_tokens, ['buy', 'sell', 'lock', 'hold'], (10,50,20,20))
-    market_investor_agent = new_agent('market_investor', initial_market_investor_usd_funds, initial_market_investor_tokens, ['buy', 'sell', 'lock', 'hold'], (50,10,20,20))
+    team_agent = new_agent('team', initial_team_usd_funds, initial_team_tokens, ['buy', 'sell', 'hold', 'lock', 'remove_locked_tokens'], (0,0,0,100,0))
+    foundation_agent = new_agent('foundation', initial_foundation_usd_funds, initial_foundation_tokens, ['buy', 'sell', 'hold', 'lock', 'remove_locked_tokens', 'incentivise'], (0,0,50,0,0,50))
+    early_investor_agent = new_agent('early_investor', initial_early_investor_usd_funds, initial_early_investor_tokens, ['buy', 'sell', 'hold', 'lock', 'remove_locked_tokens'], (10,50,20,15,5))
+    market_investor_agent = new_agent('market_investor', initial_market_investor_usd_funds, initial_market_investor_tokens, ['buy', 'sell', 'hold', 'lock', 'remove_locked_tokens'], (50,10,20,17,3))
     initial_agents[uuid.uuid4()] = team_agent
     initial_agents[uuid.uuid4()] = foundation_agent
     initial_agents[uuid.uuid4()] = early_investor_agent
     initial_agents[uuid.uuid4()] = market_investor_agent
     return initial_agents
 
+# Agent Behavior Helper
+def remove_actions(action, action_list, action_weights):
+    idx = action_list.index(action)
+    action_list.remove(action)
+    weights_lst = list(action_weights)
+    weights_lst.pop(idx)
+    action_weights = tuple(weights_lst)
+    return action_list, action_weights
+
+def shuffle_dict(dictionary):
+    l = list(dictionary.items())
+    random.shuffle(l)
+    return dict(l)
 
 # Environment
 @np.vectorize
-def calculate_increment(value, rate, max_rate, min_rate):
+def calculate_value_with_caps(rate, max_rate, min_rate):
     if (rate >= min_rate) and (rate <= max_rate):
         applied_rate = rate
     elif rate < min_rate:
         applied_rate = min_rate
     else:
         applied_rate = max_rate
-    new_value = value + applied_rate
-    return new_value
-
-# Location heper
-def check_location(position: tuple,
-                   all_sites: np.matrix,
-                   busy_locations: List[tuple]) -> List[tuple]:
-    """
-    Returns an list of available location tuples neighboring an given
-    position location.
-    """
-    N, M = all_sites.shape
-    potential_sites = [(position[0], position[1] + 1),
-                       (position[0], position[1] - 1),
-                       (position[0] + 1, position[1]),
-                       (position[0] - 1, position[1])]
-    potential_sites = [(site[0] % N, site[1] % M) for site in potential_sites]
-    valid_sites = [site for site in potential_sites if site not in busy_locations]
-    return valid_sites
-
-
-def get_free_location(position: tuple,
-                      all_sites: np.matrix,
-                      used_sites: List[tuple]) -> tuple:
-    """
-    Gets an random free location neighboring an position. Returns False if
-    there aren't any location available.
-    """
-    available_locations = check_location(position, all_sites, used_sites)
-    if len(available_locations) > 0:
-        return random.choice(available_locations)
-    else:
-        return False
-
-
-def nearby_agents(location: tuple, agents: Dict[str, dict]) -> Dict[str, dict]:
-    """
-    Filter the non-nearby agents.
-    """
-    neighbors = {label: agent for label, agent in agents.items()
-                 if is_neighbor(agent['location'], location)}
-    return neighbors
-
-
-def is_neighbor(location_1: tuple, location_2: tuple) -> bool:
-    dx = np.abs(location_1[0] - location_2[0])
-    dy = (location_1[1] - location_2[0])
-    distance = dx + dy
-    if distance == 1:
-        return True
-    else:
-        return False
+    return applied_rate
 
 # plotting
 def aggregate_runs(df,aggregate_dimension):
@@ -129,6 +94,7 @@ def monte_carlo_plot(df,aggregate_dimension,x,y,runs):
     monte_carlo_plot(df,'timestep','timestep','revenue',run_count=100)
     '''
     mean_df,median_df,std_df,min_df = aggregate_runs(df,aggregate_dimension)
+
     plt.figure(figsize=(10,6))
     for r in range(1,runs+1):
         legend_name = 'Run ' + str(r)
