@@ -46,8 +46,8 @@ if __name__ == '__main__':
     monte_carlo_plot(rdf,'timestep','timestep','early_investor_usd_funds',3)
     monte_carlo_plot(rdf,'timestep','timestep','market_investor_usd_funds',3) """
 
-    monte_carlo_plot(rdf,'timestep','timestep','foundation_tokens_vested',4)
-    monte_carlo_plot(rdf,'timestep','timestep','early_investor_tokens_vested',4)
-    monte_carlo_plot(rdf,'timestep','timestep','vesting_rate',4)
-    monte_carlo_plot(rdf,'timestep','timestep','token_price',4)
+    monte_carlo_plot(rdf,'timestep','timestep','foundation_tokens_vested',3)
+    monte_carlo_plot(rdf,'timestep','timestep','early_investor_tokens_vested',3)
+    monte_carlo_plot(rdf,'timestep','timestep','vesting_rate',3)
+    monte_carlo_plot(rdf,'timestep','timestep','token_price',3)
     plt.show()
