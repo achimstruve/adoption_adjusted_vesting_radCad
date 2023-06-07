@@ -19,6 +19,7 @@ def postprocessing(df):
     dex_lp_tokens_ds = df.dex_lp_tokens
     dex_lp_usdc_ds = df.dex_lp_usdc
     fdv_mc_ds = df.fdv_mc
+    implied_fdv_mc_ds = df.implied_fdv_mc
     mc_ds = df.mc
     circ_supply_ds = df.circ_supply
     tokens_locked_ds = df.tokens_locked
@@ -97,6 +98,7 @@ def postprocessing(df):
                           'dex_lp_tokens': dex_lp_tokens_ds,
                           'dex_lp_usdc': dex_lp_usdc_ds,
                           'fdv_mc': fdv_mc_ds,
+                          'implied_fdv_mc': implied_fdv_mc_ds,
                           'mc': mc_ds,
                           'circ_supply': circ_supply_ds,
                           'tokens_locked': tokens_locked_ds,

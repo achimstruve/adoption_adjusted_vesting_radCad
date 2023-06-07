@@ -24,10 +24,10 @@ def generate_agents(initial_team_usd_funds: int, initial_team_tokens: int,
                     initial_early_investor_usd_funds: int, initial_early_investor_tokens: int,
                     initial_market_investor_usd_funds: int, initial_market_investor_tokens: int) -> Dict[str, dict]:
     initial_agents = {}
-    team_agent = new_agent('team', initial_team_usd_funds, initial_team_tokens, ['buy', 'sell', 'hold', 'lock', 'remove_locked_tokens'], (0,0,0,100,0))
-    foundation_agent = new_agent('foundation', initial_foundation_usd_funds, initial_foundation_tokens, ['buy', 'sell', 'hold', 'lock', 'remove_locked_tokens', 'incentivise'], (0,0,50,0,0,50))
-    early_investor_agent = new_agent('early_investor', initial_early_investor_usd_funds, initial_early_investor_tokens, ['buy', 'sell', 'hold', 'lock', 'remove_locked_tokens'], (10,50,20,15,5))
-    market_investor_agent = new_agent('market_investor', initial_market_investor_usd_funds, initial_market_investor_tokens, ['buy', 'sell', 'hold', 'lock', 'remove_locked_tokens'], (50,10,20,17,3))
+    team_agent = new_agent('team', initial_team_usd_funds, initial_team_tokens, ['trade', 'hold', 'lock', 'remove_locked_tokens'], (0,0,100,0))
+    foundation_agent = new_agent('foundation', initial_foundation_usd_funds, initial_foundation_tokens, ['trade', 'hold', 'lock', 'remove_locked_tokens', 'incentivise'], (0,50,0,0,50))
+    early_investor_agent = new_agent('early_investor', initial_early_investor_usd_funds, initial_early_investor_tokens, ['trade', 'hold', 'lock', 'remove_locked_tokens'], (60,20,6,14))
+    market_investor_agent = new_agent('market_investor', initial_market_investor_usd_funds, initial_market_investor_tokens, ['trade', 'hold', 'lock', 'remove_locked_tokens'], (60,15,16,9))
     initial_agents[uuid.uuid4()] = team_agent
     initial_agents[uuid.uuid4()] = foundation_agent
     initial_agents[uuid.uuid4()] = early_investor_agent
@@ -40,6 +40,32 @@ def remove_actions(action, action_list, action_weights):
     action_list.remove(action)
     weights_lst = list(action_weights)
     weights_lst.pop(idx)
+    action_weights = tuple(weights_lst)
+    return action_list, action_weights
+
+def change_action_probability(action, action_list, action_weights, added_prob_value):
+    idx = action_list.index(action)
+    weights_lst = list(action_weights)
+    if (weights_lst[idx] + added_prob_value) > 100:
+        added_prob_value = 100 - weights_lst[idx]
+    
+    # count non-zero weights
+    non_zero_weight_count = np.count_nonzero(weights_lst)
+    if non_zero_weight_count > 1:
+        removed_prob_value = added_prob_value / (np.count_nonzero(weights_lst) - 1)
+    elif non_zero_weight_count == 1:
+        removed_prob_value = added_prob_value
+    else:
+        removed_prob_value = 0
+    
+    for i in range(len(weights_lst)):
+        if i != idx:
+            if weights_lst[i] - removed_prob_value > 0:
+                weights_lst[i] -= removed_prob_value
+            else:
+                weights_lst[i] = 0
+        else:
+            weights_lst[i] += added_prob_value
     action_weights = tuple(weights_lst)
     return action_list, action_weights
 

@@ -12,7 +12,8 @@ initial_state = {
     'dex_lp_tokens': initial_values['initial_dex_lp_tokens'],
     'dex_lp_usdc': initial_values['initial_dex_lp_usdc'],
     'fdv_mc': initial_values['initial_market_cap'],
+    'implied_fdv_mc': initial_values['initial_market_cap'],
+    'mc': initial_values['initial_mc'],
     'circ_supply': initial_values['initial_circ_supply'],
-    'mc': initial_values['initial_circ_supply'] * initial_values['initial_token_price'],
     'tokens_locked': 0
 }

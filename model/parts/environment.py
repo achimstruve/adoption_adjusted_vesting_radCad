@@ -1,5 +1,6 @@
 import numpy as np
 from .utils import *
+from ..sys_params import initial_values
 
 
 # Policy Functions
@@ -22,13 +23,22 @@ def vest_tokens(params, substep, state_history, prev_state):
         penultimate_token_price = prev_state['token_price']
     
     # calculate new vesting rate
-    vesting_rate_new_raw = previous_vesting_rate * ((penultimate_token_price + (previous_token_price - penultimate_token_price) * params['AAV_derivative_factor']) / params['implied_price'])
+    vesting_rate_new_raw = previous_vesting_rate * ((previous_token_price) / params['implied_price'])**params['AAV_exponent']
 
     vesting_rate_new = float(calculate_value_with_caps(vesting_rate_new_raw,
                                           params['max_vesting_rate'],
                                           params['min_vesting_rate']))
 
     return {'vesting_rate_new': vesting_rate_new}
+
+def change_implied_fdv_mc(params, substep, state_history, prev_state):
+    current_implied_fdv_mc = prev_state['implied_fdv_mc']
+    implied_FDV_MC_Multiple_After_3y = params['implied_FDV_MC_Multiple_After_3y']
+    fdv_mc_slope = (implied_FDV_MC_Multiple_After_3y * initial_values['initial_market_cap'] - initial_values['initial_market_cap']) / (365.25 * 3)
+    
+    new_implied_fdv_mc = current_implied_fdv_mc + fdv_mc_slope
+    
+    return {'new_implied_fdv_mc': new_implied_fdv_mc}
 
 
 # State Update Function
@@ -93,4 +103,12 @@ def update_agent_tokens_from_vesting(params, substep, state_history, prev_state,
             updated_agents[agent]['tokens_vested'] += agent_vested_tokens
 
     value = updated_agents
+    return (key, value)
+
+def update_implied_fdv_mc(params, substep, state_history, prev_state, policy_input):
+    """
+    Update the agent token balances from vesting
+    """
+    key = 'implied_fdv_mc'
+    value = policy_input['new_implied_fdv_mc']
     return (key, value)

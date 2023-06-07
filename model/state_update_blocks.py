@@ -27,6 +27,15 @@ state_update_blocks = [
         }
     },
     {
+        # environment.py
+        'policies': {
+            'change_implied_fdv_mc': change_implied_fdv_mc
+        },
+        'variables': {
+            'implied_fdv_mc': update_implied_fdv_mc
+        }
+    },
+    {
         # agents.py
         'policies': {
             'agents_choose_action': agents_choose_action
