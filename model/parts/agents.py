@@ -4,7 +4,7 @@ from uuid import uuid4
 
 # Policy Functions
 def agents_choose_action(params, substep, state_history, prev_state):
-    agents = prev_state['agents']
+    agents = prev_state['agents'].copy()
     # decide for next action of each agent
     agents_action = {}
     for agent in agents.keys():
@@ -12,8 +12,9 @@ def agents_choose_action(params, substep, state_history, prev_state):
         a_usd_funds = agents[agent]["usd_funds"]
         a_tokens = agents[agent]["tokens"]
         a_tokens_locked = agents[agent]["tokens_locked"]
-        a_action_list = agents[agent]["action_list"]
+        a_action_list = agents[agent]["action_list"][:]
         a_action_weights = agents[agent]["action_weights"]
+
         # can't trade if no funds and no tokens available
         if (a_tokens <= 0) and (a_usd_funds <= 0):
             a_action_list, a_action_weights = remove_actions('trade', a_action_list, a_action_weights)
@@ -32,6 +33,7 @@ def agents_choose_action(params, substep, state_history, prev_state):
             a_action_list, a_action_weights = change_action_probability('lock', a_action_list, a_action_weights, params['avg_token_incentivisation_percentage']**2)
 
         action = random.choices(a_action_list, weights=a_action_weights, k=1)[0]
+
         agents_action[agent] = action
     return {'agents_action': agents_action}
 

@@ -37,11 +37,12 @@ def generate_agents(initial_team_usd_funds: int, initial_team_tokens: int,
 # Agent Behavior Helper
 def remove_actions(action, action_list, action_weights):
     idx = action_list.index(action)
-    action_list.remove(action)
+    new_action_list = action_list
+    new_action_list.remove(action)
     weights_lst = list(action_weights)
     weights_lst.pop(idx)
     action_weights = tuple(weights_lst)
-    return action_list, action_weights
+    return new_action_list, action_weights
 
 def change_action_probability(action, action_list, action_weights, added_prob_value):
     idx = action_list.index(action)
